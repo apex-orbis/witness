@@ -1,0 +1,40 @@
+# Integrity gate for every ledger in this repository. Read-only; no secrets.
+name: verify
+on:
+  push:
+    branches: [main]
+  pull_request:
+permissions:
+  contents: read
+jobs:
+  ledgers:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          fetch-depth: 0
+      - name: Hash chain of every manifest
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          for m in */MANIFEST.jsonl; do python3 verify.py chain "$m"; done
+      - name: Append-only against the base branch
+        if: github.event_name == 'pull_request'
+        env:
+          BASE: ${{ github.base_ref }}
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          for m in */MANIFEST.jsonl; do
+            if git cat-file -e "origin/$BASE:$m" 2>/dev/null; then
+              git show "origin/$BASE:$m" > /tmp/base
+              if ! head -c "$(wc -c < /tmp/base)" "$m" | cmp -s - /tmp/base; then
+                echo "::error file=$m::existing lines were changed or removed; manifests are append-only"
+                exit 1
+              fi
+            fi
+          done
+          for f in $(git diff --name-only --diff-filter=DR "origin/$BASE"...HEAD); do
+            echo "::error file=$f::files are never deleted or renamed in this repository"
+            exit 1
+          done
