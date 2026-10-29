@@ -1,0 +1,3 @@
+# Hashed files must keep their exact bytes on every platform.
+*.jsonl -text
+*.ots binary
